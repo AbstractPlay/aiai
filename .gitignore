@@ -1,0 +1,16 @@
+*.class
+target
+lib/layers/
+/bin/
+/.settings/
+.project
+.classpath
+
+# Package Files
+*.jar
+*.war
+*.ear
+
+# Serverless directories
+.serverless
+node_modules
