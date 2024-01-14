@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.commons.lang3.ArrayUtils;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -46,32 +47,32 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
             LOG.info("received: {}", msg.getBody());
 
             // process message body
-            Map<String,String> myMap = new HashMap<String, String>();
+            MsgInput input = new MsgInput();
             ObjectMapper objectMapper = new ObjectMapper();
             try {
-                myMap = objectMapper.readValue(msg.getBody(), HashMap.class);
-                if (! myMap.containsKey("mgl")) {
+                input = objectMapper.readValue(msg.getBody(), MsgInput.class);
+                if (input.mgl == null) {
                     throw new Error("You must provide the name of the MGL file to execute.");
                 }
-                if (! myMap.containsKey("gameid")) {
+                if (input.gameid == null) {
                     throw new Error("You must provide the game id.");
                 }
-                if (! myMap.containsKey("seed")) {
-                    myMap.put("seed", "-1");
+                if (input.seed == null) {
+                    input.seed = "-1";
                 }
-                if (! myMap.containsKey("ttt")) {
-                    myMap.put("ttt", "10");
+                if (input.ttt == null) {
+                    input.ttt = "10";
                 }
-                if (! myMap.containsKey("history")) {
-                    myMap.put("history", "");
+                if (input.history == null) {
+                    input.history = new String[]{};
                 }
-                LOG.info("Parsed message body: {}", myMap);
+                LOG.info("Parsed message body: {}", input);
             } catch (JsonProcessingException e) {
                 LOG.error("An error occured while processing the message body: {}", e.getMessage());
             }
 
             // run it!
-            if (myMap.get("mgl").equals("TEST")) {
+            if (input.mgl.equals("TEST")) {
                 try {
                     LOG.info(generateCode());
                 } catch (CodeGenerationException e) {
@@ -82,7 +83,10 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                 String[] envp = { "HOME=/tmp" };
                 Process proc;
                 try {
-                    proc = Runtime.getRuntime().exec("java -jar " + layerpath + "aiai.jar AI " + layerpath + "mgl/" + myMap.get("mgl") + ".mgl " + myMap.get("seed") + " " + myMap.get("ttt") + " " + myMap.get("history"), envp, new File("/opt/java/lib/aiaicli"));
+                    String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "AI", layerpath + "mgl/" + input.mgl + ".mgl", input.seed, input.ttt};
+                    cmdline = ArrayUtils.addAll(cmdline, input.history);
+                    LOG.info("About to execute the following command:\n" + cmdline);
+                    proc = Runtime.getRuntime().exec(cmdline, envp, new File("/opt/java/lib/aiaicli"));
 
                     // Process proc = Runtime.getRuntime().exec("java -version");
                     try {
@@ -124,8 +128,8 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     requestParams.put("query", "bot_move");
                     requestParams.put("uid", "SkQfHAjeDxs8eeEnScuYA");
                     requestParams.put("token", generateCode());
-                    requestParams.put("metaGame", myMap.get("mgl"));
-                    requestParams.put("gameid", myMap.get("gameid"));
+                    requestParams.put("metaGame", input.mgl);
+                    requestParams.put("gameid", input.gameid);
                     requestParams.put("move", move);
                     String encodedURL = requestParams.keySet().stream()
                         .map(key -> key + "=" + encodeValue(requestParams.get(key)))
@@ -154,6 +158,17 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
             }
         }
         return null;
+    }
+
+    public class MsgInput {
+
+        public String mgl;
+        public String gameid;
+        public String seed;
+        public String ttt;
+        public String[] history;
+
+        // standard getters setters
     }
 
     private String encodeValue(String value) {
