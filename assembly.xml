@@ -11,7 +11,7 @@
     </formats>
     <fileSets>
         <!-- <fileSet>
-            <directory>${project.basedir}/conf</directory>
+            <directory>${project.basedir}/lib/mgl</directory>
         </fileSet> -->
         <!-- Include the compiled classes as-is and put them in the root of the ZIP -->
         <fileSet>

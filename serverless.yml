@@ -23,11 +23,25 @@ frameworkVersion: '3'
 plugins:
   - serverless-lift
 
+params:
+  dev:
+    profile: AbstractPlayDev
+    apiurl: https://alyhqu85me.execute-api.us-east-1.amazonaws.com/dev/query
+  prod:
+    profile: AbstractPlayProd
+    apiurl: https://7n1lziet28.execute-api.us-east-1.amazonaws.com/prod/query
+
+
 provider:
   name: aws
   runtime: java21
   stage: ${opt:stage, 'dev'}
+  profile: ${param:profile}
   region: us-east-1
+  environment:
+    BOT_UID: SkQfHAjeDxs8eeEnScuYA
+    TOTP_KEY: ${file(../apsecrets.yml):totp_key}
+    API_ENDPOINT: ${param:apiurl}
 
 constructs:
   aiai-queue:

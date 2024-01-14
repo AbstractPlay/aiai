@@ -1,13 +1,11 @@
 {
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build-ts": "tsc",
     "build": "mvn clean package",
     "deploy-dev": "serverless deploy --aws-profile AbstractPlayDev",
     "deploy-prod": "serverless --stage prod deploy --aws-profile AbstractPlayProd",
     "full-dev": "npm run build && npm run deploy-dev",
-    "full-prod": "npm run build && npm run deploy-prod",
-    "extract": "i18next 'api/**/*.ts' 'utils/**/*.ts'"
+    "full-prod": "npm run build && npm run deploy-prod"
   },
 
   "devDependencies": {
