@@ -160,7 +160,7 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
         return null;
     }
 
-    public class MsgInput {
+    public static class MsgInput {
 
         public String mgl;
         public String gameid;
@@ -169,6 +169,13 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
         public String[] history;
 
         // standard getters setters
+        public MsgInput() {
+            mgl = null;
+            gameid = null;
+            seed = null;
+            ttt = null;
+            history = null;
+        }
     }
 
     private String encodeValue(String value) {
