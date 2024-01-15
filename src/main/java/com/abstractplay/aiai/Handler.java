@@ -51,8 +51,11 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
             ObjectMapper objectMapper = new ObjectMapper();
             try {
                 input = objectMapper.readValue(msg.getBody(), MsgInput.class);
+                if (input.meta == null) {
+                    throw new Error("You must provide the game's meta ID.");
+                }
                 if (input.mgl == null) {
-                    throw new Error("You must provide the name of the MGL file to execute.");
+                    input.mgl = input.meta;
                 }
                 if (input.gameid == null) {
                     throw new Error("You must provide the game id.");
@@ -62,6 +65,7 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                 }
                 if (input.ttt == null) {
                     input.ttt = "10";
+                    // any game-specific TTT tweaking should happen here
                 }
                 if (input.history == null) {
                     input.history = new String[]{};
@@ -128,7 +132,7 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     requestParams.put("query", "bot_move");
                     requestParams.put("uid", "SkQfHAjeDxs8eeEnScuYA");
                     requestParams.put("token", generateCode());
-                    requestParams.put("metaGame", input.mgl);
+                    requestParams.put("metaGame", input.meta);
                     requestParams.put("gameid", input.gameid);
                     requestParams.put("move", move);
                     String encodedURL = requestParams.keySet().stream()
@@ -162,6 +166,7 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
 
     public static class MsgInput {
 
+        public String meta;
         public String mgl;
         public String gameid;
         public String seed;
@@ -170,6 +175,7 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
 
         // standard getters setters
         public MsgInput() {
+            meta = null;
             mgl = null;
             gameid = null;
             seed = null;
