@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -66,6 +68,11 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                 if (input.ttt == null) {
                     input.ttt = "10";
                     // any game-specific TTT tweaking should happen here
+                    // remember that this only gets called if TTT isn't passed
+                    // anything the back end explicitly sends will override this
+                    if (input.meta.equals("fanorona")) {
+                        input.ttt = "1";
+                    }
                 }
                 if (input.history == null) {
                     input.history = new String[]{};
@@ -84,44 +91,22 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     LOG.error(e.getCause());
                 }
             } else {
-                String[] envp = { "HOME=/tmp" };
-                Process proc;
                 try {
-                    String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "AI", layerpath + "mgl/" + input.mgl + ".mgl", input.seed, input.ttt};
-                    cmdline = ArrayUtils.addAll(cmdline, input.history);
-                    LOG.info("About to execute the following command:\n" + cmdline);
-                    proc = Runtime.getRuntime().exec(cmdline, envp, new File("/opt/java/lib/aiaicli"));
-
-                    // Process proc = Runtime.getRuntime().exec("java -version");
-                    try {
-                        proc.waitFor();
-                    } catch (InterruptedException e) {
-                        LOG.error("Error invoking AiAi (InterruptedException): {}", e.getMessage());
+                    final AiaiResult prestate = queryState(input);
+                    if (prestate.toMove == null) {
+                        throw new Error("Could not extract toMove from QUERY STATE");
                     }
-
-                    // Then retreive the process output
-                    InputStream in = proc.getInputStream();
-                    InputStream err = proc.getErrorStream();
-
-                    byte b[]=new byte[in.available()];
-                    in.read(b,0,b.length);
-                    LOG.info(new String(b));
-                    // System.out.println(new String(b));
-
-                    byte c[]=new byte[err.available()];
-                    err.read(c,0,c.length);
-                    LOG.info(new String(c));
-                    // outputStream.write(c);
-                    // System.out.println(new String(c));
-
-                    // extract move
-                    int left = new String(b).indexOf("<move>");
-                    int right = new String(b).indexOf("</move>");
-                    if (left == -1 || right == -1) {
-                        throw new Error("Could not extract a move");
+                    String toMove = new String(prestate.toMove);
+                    List<String> moves = new ArrayList<String>();
+                    while (toMove.equals(prestate.toMove)) {
+                        AiaiResult result = getMove(input);
+                        moves.add(result.move);
+                        toMove = new String(result.toMove);
+                        if (result.terminal.equals("true")) {
+                            break;
+                        }
                     }
-                    String move = new String(b).substring(left + 6, right);
-                    LOG.info(move);
+                    String move = String.join("|", moves);
 
                     // submit to endpoint
                     String apiurl = System.getenv("API_ENDPOINT");
@@ -210,5 +195,83 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
         long epoch = timeProvider.getTime();
         long bucket = Math.floorDiv(epoch, 30);
         return codeGenerator.generate(totp_key, bucket);
+    }
+
+    static class AiaiResult {
+        final String move;
+        final String toMove;
+        final String terminal;
+
+        AiaiResult(final String move, final String toMove, final String terminal) {
+            this.move = move;
+            this.toMove = toMove;
+            this.terminal = terminal;
+        }
+    }
+
+    private AiaiResult queryState(MsgInput input) throws IOException {
+        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "QUERY", "STATE", layerpath + "mgl/" + input.mgl + ".mgl", input.seed};
+        cmdline = ArrayUtils.addAll(cmdline, input.history);
+        LOG.info("About to execute the following command:\n" + cmdline);
+        return executeExtract(cmdline);
+    }
+
+    private AiaiResult getMove(MsgInput input) throws IOException {
+        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "AI", layerpath + "mgl/" + input.mgl + ".mgl", input.seed, input.ttt};
+        cmdline = ArrayUtils.addAll(cmdline, input.history);
+        LOG.info("About to execute the following command:\n" + cmdline);
+        return executeExtract(cmdline);
+    }
+
+    private AiaiResult executeExtract(String[] cmdline) throws IOException {
+        String[] envp = { "HOME=/tmp" };
+        Process proc;
+        proc = Runtime.getRuntime().exec(cmdline, envp, new File("/opt/java/lib/aiaicli"));
+
+        // Process proc = Runtime.getRuntime().exec("java -version");
+        try {
+            proc.waitFor();
+        } catch (InterruptedException e) {
+            LOG.error("Error invoking AiAi (InterruptedException): {}", e.getMessage());
+        }
+
+        // Then retreive the process output
+        InputStream in = proc.getInputStream();
+        InputStream err = proc.getErrorStream();
+
+        byte b[]=new byte[in.available()];
+        in.read(b,0,b.length);
+        LOG.info(new String(b));
+        // System.out.println(new String(b));
+
+        byte c[]=new byte[err.available()];
+        err.read(c,0,c.length);
+        LOG.info(new String(c));
+        // outputStream.write(c);
+        // System.out.println(new String(c));
+
+        // extract move
+        String move = null;
+        int left = new String(b).indexOf("<move>");
+        int right = new String(b).indexOf("</move>");
+        if (left != -1 && right != -1) {
+            move = new String(b).substring(left + 6, right);
+        }
+        // extract toMove
+        String toMove = null;
+        left = new String(b).indexOf("<toMove>");
+        right = new String(b).indexOf("</toMove>");
+        if (left != -1 && right != -1) {
+            toMove = new String(b).substring(left + 8, right);
+        }
+        // extract terminal
+        String terminal = null;
+        left = new String(b).indexOf("<terminal>");
+        right = new String(b).indexOf("</terminal>");
+        if (left != -1 && right != -1) {
+            terminal = new String(b).substring(left + 10, right);
+        }
+
+        return new AiaiResult(move, toMove, terminal);
     }
 }
