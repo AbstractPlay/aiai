@@ -70,7 +70,12 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     // any game-specific TTT tweaking should happen here
                     // remember that this only gets called if TTT isn't passed
                     // anything the back end explicitly sends will override this
-                    if (input.meta.equals("fanorona")) {
+                    if (
+                            input.meta.equals("fanorona") ||
+                            input.meta.equals("lielow") ||
+                            input.meta.equals("trike") ||
+                            input.meta.equals("zola")
+                       ) {
                         input.ttt = "1";
                     }
                 }
@@ -90,6 +95,12 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     LOG.error("An error occurred while generating a code: " + e.getMessage());
                     LOG.error(e.getCause());
                 }
+            } else if (input.mgl.equals("RESIGN")) {
+                try {
+                    sendToEndpoint(input, "resign");
+                } catch (CodeGenerationException | URISyntaxException | IOException | InterruptedException e) {
+                    LOG.error("An exception occured while trying to resign the game.");
+                }
             } else {
                 try {
                     final AiaiResult prestate = queryState(input);
@@ -101,6 +112,8 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     while (toMove.equals(prestate.toMove)) {
                         AiaiResult result = getMove(input);
                         moves.add(result.move);
+                        // add this move to list for next run
+                        input.history = ArrayUtils.addAll(input.history, result.move);
                         toMove = new String(result.toMove);
                         if (result.terminal.equals("true")) {
                             break;
@@ -108,32 +121,8 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                     }
                     String move = String.join("|", moves);
 
-                    // submit to endpoint
-                    String apiurl = System.getenv("API_ENDPOINT");
-                    if (apiurl == null) {
-                        throw new Error("Could not find the API_ENDPOINT environment variable.");
-                    }
-                    Map<String, String> requestParams = new HashMap<>();
-                    requestParams.put("query", "bot_move");
-                    requestParams.put("uid", "SkQfHAjeDxs8eeEnScuYA");
-                    requestParams.put("token", generateCode());
-                    requestParams.put("metaGame", input.meta);
-                    requestParams.put("gameid", input.gameid);
-                    requestParams.put("move", move);
-                    String encodedURL = requestParams.keySet().stream()
-                        .map(key -> key + "=" + encodeValue(requestParams.get(key)))
-                        .collect(Collectors.joining("&", apiurl + "?", ""));
-                    HttpRequest request = HttpRequest.newBuilder()
-                        .uri(new URI(encodedURL))
-                        .GET()
-                        .build();
-                    HttpResponse<String> response = HttpClient.newBuilder()
-                        .proxy(ProxySelector.getDefault())
-                        .build()
-                        .send(request, BodyHandlers.ofString());
-                    if (response.statusCode() != 200) {
-                        throw new Error("Got an error response from the endpoint:\nStatus code: " + response.statusCode() + "\nContent: " + response.body());
-                    }
+                    // Send move to endpoint
+                    sendToEndpoint(input, move);
                     LOG.info("Endpoint accepted our submission. All done.");
                 } catch (IOException | URISyntaxException e) {
                     LOG.error("Error invoking AiAi (IOException): {}", e.getMessage());
@@ -210,14 +199,14 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
     }
 
     private AiaiResult queryState(MsgInput input) throws IOException {
-        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "QUERY", "STATE", layerpath + "mgl/" + input.mgl + ".mgl", input.seed};
+        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "QUERY", "STATE", "mgl/" + input.mgl + ".mgl", input.seed};
         cmdline = ArrayUtils.addAll(cmdline, input.history);
         LOG.info("About to execute the following command:\n" + cmdline);
         return executeExtract(cmdline);
     }
 
     private AiaiResult getMove(MsgInput input) throws IOException {
-        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "AI", layerpath + "mgl/" + input.mgl + ".mgl", input.seed, input.ttt};
+        String[] cmdline = new String[] {"java", "-jar", layerpath + "aiai.jar", "AI", "mgl/" + input.mgl + ".mgl", input.seed, input.ttt};
         cmdline = ArrayUtils.addAll(cmdline, input.history);
         LOG.info("About to execute the following command:\n" + cmdline);
         return executeExtract(cmdline);
@@ -273,5 +262,34 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
         }
 
         return new AiaiResult(move, toMove, terminal);
+    }
+
+    private void sendToEndpoint(MsgInput input, String move) throws CodeGenerationException, URISyntaxException, IOException, InterruptedException {
+        // submit to endpoint
+        String apiurl = System.getenv("API_ENDPOINT");
+        if (apiurl == null) {
+            throw new Error("Could not find the API_ENDPOINT environment variable.");
+        }
+        Map<String, String> requestParams = new HashMap<>();
+        requestParams.put("query", "bot_move");
+        requestParams.put("uid", "SkQfHAjeDxs8eeEnScuYA");
+        requestParams.put("token", generateCode());
+        requestParams.put("metaGame", input.meta);
+        requestParams.put("gameid", input.gameid);
+        requestParams.put("move", move);
+        String encodedURL = requestParams.keySet().stream()
+            .map(key -> key + "=" + encodeValue(requestParams.get(key)))
+            .collect(Collectors.joining("&", apiurl + "?", ""));
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(new URI(encodedURL))
+            .GET()
+            .build();
+        HttpResponse<String> response = HttpClient.newBuilder()
+            .proxy(ProxySelector.getDefault())
+            .build()
+            .send(request, BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new Error("Got an error response from the endpoint:\nStatus code: " + response.statusCode() + "\nContent: " + response.body());
+        }
     }
 }
