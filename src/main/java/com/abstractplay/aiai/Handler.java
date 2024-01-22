@@ -74,9 +74,13 @@ public class Handler implements RequestHandler<SQSEvent, Void>{
                             input.meta.equals("fanorona") ||
                             input.meta.equals("lielow") ||
                             input.meta.equals("trike") ||
-                            input.meta.equals("zola")
+                            input.meta.equals("zola") ||
+                            input.meta.equals("tumbleweed")
                        ) {
                         input.ttt = "1";
+                    }
+                    if (input.meta.equals("amazons")) {
+                        input.ttt = "5";
                     }
                 }
                 if (input.history == null) {
